@@ -7,4 +7,3 @@
         name: "ansible-role-chezmoi"
       vars:
         chezmoi_init_url: "https://github.com/hussainweb/ansible-test-chezmoi"
-        chezmoi_version: "{{ lookup('ansible.builtin.env', 'CHEZMOI_VERSION')|default('') }}"

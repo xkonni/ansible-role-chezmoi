@@ -1,23 +1,94 @@
 ---
-- name: Install chezmoi via snap
-  community.general.snap:
-    name:
-      - chezmoi
-    classic: yes
-  when: chezmoi_install_method == "snap"
+- name: Check if chezmoi binary exists
+  ansible.builtin.stat:
+    path: "{{ ansible_facts.env.HOME }}/bin/chezmoi"
+  register: chezmoi_binary_check
 
-- name: Install chezmoi using a package
-  ansible.builtin.import_tasks: download-chezmoi.yml
-  when: chezmoi_install_method != "snap"
+- name: Check if chezmoi is already initialized
+  ansible.builtin.stat:
+    path: "{{ ansible_facts.env.HOME }}/.local/share/chezmoi"
+  register: chezmoi_initialized
+  when: chezmoi_binary_check.stat.exists
 
-- name: Initialize chezmoi (empty)
-  ansible.builtin.command: "chezmoi init"
-  when: not chezmoi_init_url
+- name: Download and install chezmoi
+  when: not chezmoi_binary_check.stat.exists
+  block:
+    - name: Download chezmoi install script
+      ansible.builtin.get_url:
+        url: https://get.chezmoi.io
+        dest: /tmp/install-chezmoi.sh
+        mode: '0755'
+
+    - name: Install chezmoi
+      ansible.builtin.shell: /tmp/install-chezmoi.sh -b {{ ansible_facts.env.HOME }}/bin
+      args:
+        creates: "{{ ansible_facts.env.HOME }}/bin/chezmoi"
+
+    - name: Remove install script
+      ansible.builtin.file:
+        path: /tmp/install-chezmoi.sh
+        state: absent
+
+- name: Cleanup before chezmoi initialization
+  when: chezmoi_cleanup | default(false)
+  block:
+    - name: Check if oh-my-zsh is properly installed
+      ansible.builtin.stat:
+        path: "{{ ansible_facts.env.HOME }}/.oh-my-zsh/oh-my-zsh.sh"
+      register: ohmyzsh_check
+
+    - name: Remove incomplete oh-my-zsh directory
+      ansible.builtin.file:
+        path: "{{ ansible_facts.env.HOME }}/.oh-my-zsh"
+        state: absent
+        force: yes
+      when: not ohmyzsh_check.stat.exists
+
+    - name: Remove zshrc to avoid conflicts
+      ansible.builtin.file:
+        path: "{{ ansible_facts.env.HOME }}/.zshrc"
+        state: absent
+
+    - name: Purge existing chezmoi data
+      ansible.builtin.shell: "{{ ansible_facts.env.HOME }}/bin/chezmoi purge --force || true"
+      changed_when: false
+      when: chezmoi_binary_check.stat.exists
+
+- name: Re-check if chezmoi is initialized after cleanup
+  ansible.builtin.stat:
+    path: "{{ ansible_facts.env.HOME }}/.local/share/chezmoi"
+  register: chezmoi_initialized
+
+
+- name: Initialize chezmoi (empty chezmoi_init_url)
+  ansible.builtin.shell: "{{ ansible_facts.env.HOME }}/bin/chezmoi init < /dev/null"
+  when:
+    - chezmoi_init_url == ""
+    - not chezmoi_binary_check.stat.exists or not chezmoi_initialized.stat.exists
   args:
     creates: "~/.local/share/chezmoi"
 
 - name: Initialize chezmoi
-  ansible.builtin.command: "chezmoi init --apply --verbose {{ chezmoi_init_url }}"
-  when: chezmoi_init_url
+  ansible.builtin.shell: "{{ ansible_facts.env.HOME }}/bin/chezmoi init --refresh-externals {{ chezmoi_init_url }} < /dev/null"
+  when:
+    - chezmoi_init_url != ""
+    - not chezmoi_binary_check.stat.exists or not chezmoi_initialized.stat.exists
   args:
     creates: "~/.local/share/chezmoi"
+
+- name: Update chezmoi
+  ansible.builtin.shell: "{{ ansible_facts.env.HOME }}/bin/chezmoi update --refresh-externals --force < /dev/null"
+  when:
+    - chezmoi_binary_check.stat.exists
+    - chezmoi_initialized.stat.exists
+  async: 60
+  poll: 5
+
+- name: Apply chezmoi
+  ansible.builtin.shell: "timeout 55 {{ ansible_facts.env.HOME }}/bin/chezmoi apply --force < /dev/null"
+  when:
+    - chezmoi_init_url != ""
+    - chezmoi_apply | default(true)
+  async: 300
+  poll: 5
+  ignore_errors: "{{ chezmoi_apply_ignore_errors | default(false) }}"
