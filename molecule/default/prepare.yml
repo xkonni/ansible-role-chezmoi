@@ -12,7 +12,7 @@
         state: present
       when: ansible_facts['os_family'] == "Debian"
     - name: Install packages (redhat)
-      ansible.builtin.yum:
+      ansible.builtin.dnf:
         name:
           - curl
           - git

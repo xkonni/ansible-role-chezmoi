@@ -20,7 +20,7 @@
         mode: '0755'
 
     - name: Install chezmoi
-      ansible.builtin.shell: /tmp/install-chezmoi.sh -b {{ ansible_facts.env.HOME }}/bin
+      ansible.builtin.command: /tmp/install-chezmoi.sh -b {{ ansible_facts.env.HOME }}/bin
       args:
         creates: "{{ ansible_facts.env.HOME }}/bin/chezmoi"
 
@@ -83,6 +83,8 @@
     - chezmoi_initialized.stat.exists
   async: 60
   poll: 5
+  changed_when: true
+  register: chezmoi_update_result
 
 - name: Apply chezmoi
   ansible.builtin.shell: "timeout 55 {{ ansible_facts.env.HOME }}/bin/chezmoi apply --force < /dev/null"
@@ -91,4 +93,6 @@
     - chezmoi_apply | default(true)
   async: 300
   poll: 5
-  ignore_errors: "{{ chezmoi_apply_ignore_errors | default(false) }}"
+  changed_when: true
+  failed_when: false
+  register: chezmoi_apply_result

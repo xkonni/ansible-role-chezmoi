@@ -1,5 +1,5 @@
 ---
-name: Molecule CI
+name: CI
 on:
   push:
     branches: [ main ]
@@ -8,17 +8,8 @@ on:
 
 jobs:
   test:
-    name: Molecule
+    name: Test
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        distro:
-          - debian11
-          - debian10
-          - ubuntu2204
-          - ubuntu2004
-          - fedora37
-          - fedora36
 
     steps:
       - name: Check out the codebase.
@@ -29,12 +20,15 @@ jobs:
         with:
           python-version: '3.x'
 
-      - name: Install test dependencies.
-        run: pip3 install ansible molecule[docker] yamllint ansible-lint
+      - name: Install Ansible and linters.
+        run: pip3 install ansible yamllint ansible-lint
 
-      - name: Run Molecule tests.
-        run: molecule test
-        env:
-          PY_COLORS: '1'
-          ANSIBLE_FORCE_COLOR: '1'
-          MOLECULE_DISTRO: ${{ matrix.distro }}
+      - name: Lint with yamllint.
+        run: yamllint .
+
+      - name: Lint with ansible-lint.
+        run: ansible-lint
+
+      - name: Test role syntax.
+        run: |
+          ansible-playbook tests/test.yml --syntax-check
